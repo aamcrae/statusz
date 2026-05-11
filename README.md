@@ -1,0 +1,2 @@
+# statusz
+Go status display
