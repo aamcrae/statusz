@@ -9,15 +9,22 @@ import (
 	"time"
 )
 
-var recorderLock sync.Mutex
-var recorderTime int = 10 // seconds
-var recorderSize int = 5  // Mbyte
-var recorder *trace.FlightRecorder
+const (
+	flightRecorder = "recorder"
+)
+
+var (
+	recorderLock sync.Mutex
+	recorderTime int = 10 // seconds
+	recorderSize int = 5  // Mbyte
+	recorder *trace.FlightRecorder
+)
 
 func init() {
-	RegisterPage(flightRecorder+"/start", flightRecorderStart)
-	RegisterPage(flightRecorder+"/stop", flightRecorderStop)
-	RegisterPage(flightRecorder+"/download", flightRecorderDownload)
+	RegisterPage("Flight recorder", flightRecorder, flightRecorderHandler)
+	RegisterHandler(flightRecorder+"/start", flightRecorderStart)
+	RegisterHandler(flightRecorder+"/stop", flightRecorderStop)
+	RegisterHandler(flightRecorder+"/download", flightRecorderDownload)
 }
 
 func flightRecorderHandler(w http.ResponseWriter, r *http.Request) {

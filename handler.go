@@ -10,14 +10,24 @@ import (
 	"time"
 )
 
-type localHandler func(http.ResponseWriter, *http.Request)
+type handler func(http.ResponseWriter, *http.Request)
 
-var localHandlers []localHandler
+type link struct {
+	link string
+	handler handler
+}
+
+type page struct {
+	name string
+	link string
+}
+
+var extensions []handler
+var links []link
+var pages []page
 
 const (
 	BasePage       = "/statusz"
-	environ        = "environ"
-	flightRecorder = "recorder"
 )
 
 type metricRef struct {
@@ -56,18 +66,22 @@ var startTime = time.Now()
 
 func init() {
 	http.HandleFunc(BasePage, statuszHandler)
-	RegisterPage(environ, environHandler)
-	RegisterPage(flightRecorder, flightRecorderHandler)
 }
 
-func RegisterLocalHandler(f localHandler) {
-	localHandlers = append(localHandlers, f)
+func RegisterExtension(f handler) {
+	extensions = append(extensions, f)
 }
 
-func RegisterPage(p string, f func(http.ResponseWriter, *http.Request)) {
-	if p != "" {
-		http.HandleFunc(BasePage+"/"+p, f)
-	}
+func RegisterHandler(p string, handler handler) {
+	l := BasePage + "/" + p
+	links = append(links, link{ link: l, handler: handler})
+	http.HandleFunc(l, handler)
+}
+
+func RegisterPage(name, link string, handler handler) {
+	l := BasePage + "/" + link
+	pages = append(pages, page{name: name, link: l})
+	RegisterHandler(link, handler)
 }
 
 func statuszHandler(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +95,7 @@ func statuszHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "<h1>Status</h1>")
 	printRuntime(w)
 
-	for _, f := range localHandlers {
+	for _, f := range extensions {
 		fmt.Fprint(w, "<hr>")
 		f(w, r)
 	}
@@ -89,8 +103,9 @@ func statuszHandler(w http.ResponseWriter, r *http.Request) {
 
 func printRuntime(w http.ResponseWriter) {
 	fmt.Fprintf(w, "Command line: %s<br>", strings.Join(os.Args, " "))
-	fmt.Fprint(w, "<a href=\""+BasePage+"/"+environ+"\">Environment</a>, ")
-	fmt.Fprint(w, "<a href=\""+BasePage+"/"+flightRecorder+"\">Flight Recorder</a>, ")
+	for _, p := range pages {
+		fmt.Fprintf(w, "<a href=\"%s\">%s</a>, ", p.link, p.name)
+	}
 	fmt.Fprintf(w, "uptime %s", time.Since(startTime).Truncate(time.Second))
 	if la, err := readProc("/proc/loadavg", " ", 3); err == nil {
 		fmt.Fprintf(w, ", Load avg: [%s]", strings.Join(la[:3], " "))
@@ -170,6 +185,10 @@ func formatBytes(b uint64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func init() {
+	RegisterPage("Environment", "environ", environHandler)
 }
 
 func environHandler(w http.ResponseWriter, _ *http.Request) {

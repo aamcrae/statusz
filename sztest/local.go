@@ -8,8 +8,7 @@ import (
 )
 
 func init() {
-	statusz.RegisterLocalHandler(local)
-	statusz.RegisterPage("pr/", prPage)
+	statusz.RegisterExtension(local)
 }
 
 func local(w http.ResponseWriter, r *http.Request) {
