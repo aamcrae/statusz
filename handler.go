@@ -5,7 +5,7 @@ package statusz
 
 import (
 	"fmt"
-    "html/template"
+	"html/template"
 	"net/http"
 	"os"
 	"runtime/metrics"
@@ -236,15 +236,18 @@ func init() {
 	RegisterPage("Environment", "environ", environHandler)
 }
 
-// environHandler is the page handler for displaying the environment variables for the process
-func environHandler(w http.ResponseWriter, _ *http.Request) {
-	tmpl := template.Must(template.New("env").Parse(
-`<html><head></head><body>
+var envTmpl *template.Template = template.Must(template.New("env").Parse(
+	`<html><head></head><body>
 <h1>Environment variables</h1>
 {{range .}}{{.}}<br>{{end}}
 </body></html>`))
+
+// environHandler is the page handler for displaying the environment variables for the process
+func environHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	env := os.Environ()
 	sort.Strings(env)
-	tmpl.Execute(w, env)
+	if err := envTmpl.Execute(w, env); err != nil {
+		fmt.Fprintf(w, "Template error: %v", err)
+	}
 }
