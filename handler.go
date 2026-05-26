@@ -1,7 +1,11 @@
+// Package statusz implements a per-process status page showing runtime
+// values and statistics. Custom handlers can be added to display
+// extra information specific to the application
 package statusz
 
 import (
 	"fmt"
+    "html/template"
 	"net/http"
 	"os"
 	"runtime/metrics"
@@ -12,22 +16,27 @@ import (
 
 type handler func(http.ResponseWriter, *http.Request)
 
+// link holds a URL path and the handler for that path
 type link struct {
-	link string
+	path    string
 	handler handler
 }
 
+// page holds a name of a page and the link to get to that page.
 type page struct {
 	name string
-	link string
+	path string
 }
 
-var extensions []handler
-var links []link
-var pages []page
-
 const (
-	BasePage       = "/statusz"
+	BasePage = "/statusz"
+)
+
+var (
+	extensions []handler        // List of handlers to invoke for custom extras
+	links      []link           // List of paths/handlers registered
+	pages      []page           // List of linked pages to be added to /statusz
+	muxes      []*http.ServeMux = []*http.ServeMux{http.DefaultServeMux}
 )
 
 type metricRef struct {
@@ -35,6 +44,7 @@ type metricRef struct {
 	name  string
 }
 
+// List of supported metrics at https://pkg.go.dev/runtime/metrics#hdr-Supported_metrics
 var cpuMetrics = []metricRef{
 	{"GC total time", "/cpu/classes/gc/total:cpu-seconds"},
 	{"CPU time used", "/cpu/classes/user:cpu-seconds"},
@@ -65,27 +75,55 @@ var memMetrics = []metricRef{
 var startTime = time.Now()
 
 func init() {
-	http.HandleFunc(BasePage, statuszHandler)
+	addLink(BasePage, statuszHandler)
 }
 
+// RegisterExtension adds a custom extension to the statusz page
+// It is invoked after the standard statusz page
 func RegisterExtension(f handler) {
 	extensions = append(extensions, f)
 }
 
+// RegisterHandler registers a handler for a URL path under /statusz
 func RegisterHandler(p string, handler handler) {
-	l := BasePage + "/" + p
-	links = append(links, link{ link: l, handler: handler})
-	http.HandleFunc(l, handler)
+	addLink(BasePage+"/"+p, handler)
 }
 
-func RegisterPage(name, link string, handler handler) {
-	l := BasePage + "/" + link
-	pages = append(pages, page{name: name, link: l})
-	RegisterHandler(link, handler)
+// RegisterPage adds a named link to the statusz page
+func RegisterPage(name, path string, handler handler) {
+	l := BasePage + "/" + path
+	pages = append(pages, page{name: template.HTMLEscapeString(name), path: l})
+	RegisterHandler(path, handler)
 }
 
+// Install adds statusz handling to this mux
+func Install(mux *http.ServeMux) {
+	// No need to install the default mux
+	if mux == http.DefaultServeMux {
+		return
+	}
+	// Add all of the handlers to this mux
+	for _, l := range links {
+		mux.HandleFunc(l.path, l.handler)
+	}
+	muxes = append(muxes, mux)
+}
+
+func addLink(path string, handler handler) {
+	links = append(links, link{path: path, handler: handler})
+	addHandler(path, handler)
+}
+
+// addHandler adds the path/handler to each of the muxes
+func addHandler(path string, handler handler) {
+	for _, m := range muxes {
+		m.HandleFunc(path, handler)
+	}
+}
+
+// statuszHandler implements the "/statusz" page
 func statuszHandler(w http.ResponseWriter, r *http.Request) {
-	// Ensure that there are no extra references
+	// Ensure that only "/statusz" is handled
 	if r.URL.Path != BasePage {
 		http.NotFound(w, r)
 		return
@@ -99,20 +137,23 @@ func statuszHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "<hr>")
 		f(w, r)
 	}
+	fmt.Fprint(w, "</body></html>")
 }
 
+// printRuntime displays the standard runtime information such as memory used,
+// goroutines active etc.
 func printRuntime(w http.ResponseWriter) {
-	fmt.Fprintf(w, "Command line: %s<br>", strings.Join(os.Args, " "))
+	fmt.Fprintf(w, "Command line: %s<br>", template.HTMLEscapeString(strings.Join(os.Args, " ")))
 	for _, p := range pages {
-		fmt.Fprintf(w, "<a href=\"%s\">%s</a>, ", p.link, p.name)
+		fmt.Fprintf(w, "<a href=\"%s\">%s</a>, ", p.path, p.name)
 	}
 	fmt.Fprintf(w, "uptime %s", time.Since(startTime).Truncate(time.Second))
-	if la, err := readProc("/proc/loadavg", " ", 3); err == nil {
+	if la, err := readProc("/proc/loadavg", 3); err == nil {
 		fmt.Fprintf(w, ", Load avg: [%s]", strings.Join(la[:3], " "))
 	} else {
 		fmt.Fprintf(w, ", Load unavailable (%s)", err)
 	}
-	if st, err := readProc("/proc/self/stat", " ", 22); err == nil {
+	if st, err := readProc("/proc/self/stat", 22); err == nil {
 		fmt.Fprintf(w, ", PID %s", st[0])
 	} else {
 		fmt.Fprintf(w, ", Process information unavailable (%s)", err)
@@ -124,7 +165,8 @@ func printRuntime(w http.ResponseWriter) {
 	fmt.Fprintf(w, "</div>")
 }
 
-func printMetricTable(w http.ResponseWriter, title string, units string, names []metricRef) {
+// printMetricTable reads a set of associated metrics and displays them in a single table
+func printMetricTable(w http.ResponseWriter, title, units string, names []metricRef) {
 	samples := make([]metrics.Sample, len(names))
 	for i := range names {
 		samples[i].Name = names[i].name
@@ -137,18 +179,21 @@ func printMetricTable(w http.ResponseWriter, title string, units string, names [
 	fmt.Fprint(w, "</tbody></table>")
 }
 
-func readProc(fn string, sep string, minFields int) ([]string, error) {
+// readProc reads the selected file from "/proc" and parses the contents into
+// a slice of strings.
+func readProc(fn string, minFields int) ([]string, error) {
 	data, err := os.ReadFile(fn)
 	if err != nil {
 		return nil, err
 	}
-	fields := strings.Split(string(data), sep)
+	fields := strings.Fields(string(data))
 	if len(fields) < minFields {
 		return nil, fmt.Errorf("expected at least %d fields in %s - %d found", minFields, fn, len(fields))
 	}
 	return fields, nil
 }
 
+// format pretty-prints a metric value
 func format(s metrics.Sample) string {
 	// Extract unit
 	_, unit, _ := strings.Cut(s.Name, ":")
@@ -160,9 +205,8 @@ func format(s metrics.Sample) string {
 			return fmt.Sprintf("%d", s.Value.Uint64())
 		}
 	case metrics.KindFloat64:
-		if unit == "cpu-seconds" {
-			return fmt.Sprintf("%.3f", s.Value.Float64())
-		} else if unit == "seconds" {
+		// May be seconds or cpu-seconds
+		if strings.HasSuffix(unit, "seconds") {
 			return fmt.Sprintf("%.3f", s.Value.Float64())
 		} else {
 			return fmt.Sprintf("%f", s.Value.Float64())
@@ -174,6 +218,7 @@ func format(s metrics.Sample) string {
 	}
 }
 
+// formatBytes pretty-prints a memory size value
 func formatBytes(b uint64) string {
 	const unit = 1024
 	if b < unit {
@@ -191,8 +236,15 @@ func init() {
 	RegisterPage("Environment", "environ", environHandler)
 }
 
+// environHandler is the page handler for displaying the environment variables for the process
 func environHandler(w http.ResponseWriter, _ *http.Request) {
+	tmpl := template.Must(template.New("env").Parse(
+`<html><head></head><body>
+<h1>Environment variables</h1>
+{{range .}}{{.}}<br>{{end}}
+</body></html>`))
+	w.Header().Set("Content-Type", "text/html")
 	env := os.Environ()
 	sort.Strings(env)
-	fmt.Fprint(w, strings.Join(env, "\n"))
+	tmpl.Execute(w, env)
 }

@@ -1,3 +1,5 @@
+// Implements a page handler for starting and stopping the internal
+// tracing flight recorder, and for downloading the captured traces
 package statusz
 
 import (
@@ -17,9 +19,10 @@ var (
 	recorderLock sync.Mutex
 	recorderTime int = 10 // seconds
 	recorderSize int = 5  // Mbyte
-	recorder *trace.FlightRecorder
+	recorder     *trace.FlightRecorder
 )
 
+// Register the flight recorder pages
 func init() {
 	RegisterPage("Flight recorder", flightRecorder, flightRecorderHandler)
 	RegisterHandler(flightRecorder+"/start", flightRecorderStart)
@@ -27,6 +30,8 @@ func init() {
 	RegisterHandler(flightRecorder+"/download", flightRecorderDownload)
 }
 
+// flightRecorderHandler presents a super-simple web page for managing
+// the internal flight recorder. No prizes for the UI here.
 func flightRecorderHandler(w http.ResponseWriter, r *http.Request) {
 	var st string
 	recorderLock.Lock()
@@ -42,7 +47,7 @@ func flightRecorderHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<iframe name=\"response\" srcdoc=\"%s\" height=\"44\" width=\"100\"></iframe><p>", st)
 	fmt.Fprint(w, "Set the recording time and buffer size, and select 'Start' to start the Flight Recorder")
 	fmt.Fprint(w, "<form action=\""+flightRecorder+"/start\" target=\"response\">")
-	fmt.Fprintf(w, "Recording time: <input type=\"number\" value=\"%d\" max=\"600\" min=\"1\" name=\"time\"> (seconds)<p>", recorderTime)
+	fmt.Fprintf(w, "Recording window: <input type=\"number\" value=\"%d\" max=\"600\" min=\"1\" name=\"time\"> (seconds)<p>", recorderTime)
 	fmt.Fprintf(w, "Buffer size: <input type=\"number\" value=\"%d\" max=\"100\" min=\"1\" name=\"buffer\"> (Mbytes)<p>", recorderSize)
 	fmt.Fprintf(w, "<button type=\"submit\">Start recorder</button><br>")
 	fmt.Fprintf(w, "</form>")
@@ -55,6 +60,8 @@ func flightRecorderHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "</body></html>")
 }
 
+// flightRecorderStart is the action handler for starting the flight recorder.
+// The time (in seconds) and buffer size (in Mbytes) are passed in as form values.
 func flightRecorderStart(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -68,10 +75,15 @@ func flightRecorderStart(w http.ResponseWriter, r *http.Request) {
 	recorderTime = parseNumber(r.Form["time"], 600, 10)
 	recorderSize = parseNumber(r.Form["buffer"], 100, 5)
 	recorder = trace.NewFlightRecorder(trace.FlightRecorderConfig{MinAge: time.Duration(recorderTime) * time.Second, MaxBytes: uint64(recorderSize) * 1024 * 1024})
-	recorder.Start()
-	fmt.Fprint(w, "RUNNING")
+	if err := recorder.Start(); err != nil {
+		recorder = nil
+		fmt.Fprintf(w, "ERR - %v", err)
+	} else {
+		fmt.Fprint(w, "RUNNING")
+	}
 }
 
+// flightRecorderStop is the action handler for stopping the flight recorder
 func flightRecorderStop(w http.ResponseWriter, r *http.Request) {
 	recorderLock.Lock()
 	defer recorderLock.Unlock()
@@ -82,19 +94,20 @@ func flightRecorderStop(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "STOPPED")
 }
 
+// flightRecorderDownload is the action handler for downloading the trace data
 func flightRecorderDownload(w http.ResponseWriter, r *http.Request) {
 	recorderLock.Lock()
 	defer recorderLock.Unlock()
 	if recorder != nil {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"traces.out\"")
-		recorder.WriteTo(w)
+		_, _ = recorder.WriteTo(w)
 	} else {
 		fmt.Fprintf(w, "Not recording\n")
 	}
 }
 
-func parseNumber(s []string, max int, def int) int {
+func parseNumber(s []string, max, def int) int {
 	if len(s) != 1 {
 		return def
 	}

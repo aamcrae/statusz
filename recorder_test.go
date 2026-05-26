@@ -1,14 +1,14 @@
+//go:build unit
+
 package statusz
 
 import (
 	"net/http"
 	"net/http/httptest"
-
 	"testing"
 )
 
 func TestRecorder(t *testing.T) {
-
 	start, err := http.NewRequest("GET", "/start?time=20&buffer=3", nil)
 	if err != nil {
 		t.Fatal(err)
