@@ -28,7 +28,7 @@ func Logs(held uint) {
 
 // logs display
 func (l *logBuffer) logsExtension(w http.ResponseWriter) {
-	fmt.Fprint(w, "<h2>Recent logs</h2>")
+	fmt.Fprint(w, "<h1>Recent logs</h1>")
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	i := l.index
