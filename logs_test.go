@@ -1,4 +1,3 @@
-
 package statusz
 
 import (
@@ -23,8 +22,8 @@ func TestLog(t *testing.T) {
 	}
 	resp := httptest.NewRecorder()
 	logsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			memLog.logsExtension(w)
-		})
+		memLog.logsExtension(w)
+	})
 	logsHandler.ServeHTTP(resp, req)
 	body := resp.Body.String()
 	for i := range 5 {
