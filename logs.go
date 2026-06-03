@@ -9,25 +9,39 @@ import (
 	"sync"
 )
 
-type logBuffer struct {
+type memLogger struct {
 	lock  sync.RWMutex
 	size  uint
 	index uint
 	cb    []string
 }
 
-func Logs(held uint) {
-	var logs logBuffer
-	logs.size = held
-	logs.cb = make([]string, held)
-	log.SetOutput(io.MultiWriter(&logs, log.Writer()))
-	RegisterExtension(func(w http.ResponseWriter, r *http.Request) {
-		logs.logsExtension(w)
+var memLog *memLogger
+var logSetup sync.Once
+
+func StdLoggerDefault(held uint) {
+	StdLogger(log.Default(), held)
+}
+
+func StdLogger(logger *log.Logger, held uint) {
+	mlog := getLogger(held)
+	logger.SetOutput(io.MultiWriter(mlog, logger.Writer()))
+}
+
+func getLogger(held uint) *memLogger {
+	logSetup.Do(func() {
+		memLog = new(memLogger)
+		memLog.size = held
+		memLog.cb = make([]string, held)
+		RegisterExtension(func(w http.ResponseWriter, r *http.Request) {
+			memLog.logsExtension(w)
+		})
 	})
+	return memLog
 }
 
 // logs display
-func (l *logBuffer) logsExtension(w http.ResponseWriter) {
+func (l *memLogger) logsExtension(w http.ResponseWriter) {
 	fmt.Fprint(w, "<h1>Recent logs</h1>")
 	l.lock.RLock()
 	defer l.lock.RUnlock()
@@ -40,7 +54,7 @@ func (l *logBuffer) logsExtension(w http.ResponseWriter) {
 	}
 }
 
-func (l *logBuffer) Write(p []byte) (n int, err error) {
+func (l *memLogger) Write(p []byte) (n int, err error) {
 	var b strings.Builder
 	ln, _ := b.Write(p)
 	l.lock.Lock()

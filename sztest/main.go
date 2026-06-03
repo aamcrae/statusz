@@ -14,7 +14,7 @@ var port = flag.Int("port", 9000, "Server port")
 
 func main() {
 
-	statusz.Logs(10)
+	statusz.StdLoggerDefault(10)
 	go func() {
 		var i int
 		for {
