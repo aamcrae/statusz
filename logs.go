@@ -24,11 +24,10 @@ func StdLoggerDefault(held uint) {
 }
 
 func StdLogger(logger *log.Logger, held uint) {
-	mlog := getLogger(held)
-	logger.SetOutput(io.MultiWriter(mlog, logger.Writer()))
+	logger.SetOutput(io.MultiWriter(MemLogger(held), logger.Writer()))
 }
 
-func getLogger(held uint) *memLogger {
+func MemLogger(held uint) *memLogger {
 	logSetup.Do(func() {
 		memLog = new(memLogger)
 		memLog.size = held
