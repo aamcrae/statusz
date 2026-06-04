@@ -56,9 +56,10 @@ func (l *memLogger) logsExtension(w http.ResponseWriter) {
 func (l *memLogger) Write(p []byte) (n int, err error) {
 	var b strings.Builder
 	ln, _ := b.Write(p)
+	s := b.String()
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	l.cb[l.index] = b.String()
+	l.cb[l.index] = s
 	l.index = (l.index + 1) % l.size
 	return ln, nil
 }
