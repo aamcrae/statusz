@@ -1,5 +1,6 @@
 // Package szzap provides a Zap logging sink for the statusz
-// memory logger
+// memory logger. This is a separate package to avoid
+// dependency on zap for the main portion of statusz.
 package szzap
 
 import (

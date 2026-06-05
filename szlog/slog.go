@@ -8,12 +8,12 @@ import (
 	"github.com/aamcrae/statusz"
 )
 
-// Slog creates a structure logger with a memory buffer handler
+// Slog creates a structured logger with the memory logger handler
 func Slog(held uint) *slog.Logger {
 	return slog.New(StatuszHandler(held))
 }
 
-// StatuszHandler creates a Handler for the memory logger
+// StatuszHandler creates a slog Handler for the memory logger
 func StatuszHandler(held uint) slog.Handler {
 	return slog.NewTextHandler(statusz.MemLogger(held), nil)
 }

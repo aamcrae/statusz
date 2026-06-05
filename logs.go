@@ -19,22 +19,26 @@ type lbuf struct {
 
 type memLogger struct {
 	lock  sync.RWMutex
-	size  uint
-	index uint
+	size  uint // Number of log entries
+	index uint // Index of next buffer to use
 	cb    []lbuf
 }
 
-var memLog *memLogger
+var memLog *memLogger // Lazily created memory logger
 var logSetup sync.Once
 
+// StdLoggerDefault attaches the memory logger to the default standard logger
 func StdLoggerDefault(held uint) {
 	StdLogger(log.Default(), held)
 }
 
+// StdLogger attaches the memory logger to a logger.
 func StdLogger(logger *log.Logger, held uint) {
 	logger.SetOutput(io.MultiWriter(MemLogger(held), logger.Writer()))
 }
 
+// MemLogger creates (if necessary) and provides a Writer that
+// copies logs to the circular buffer.
 func MemLogger(held uint) *memLogger {
 	logSetup.Do(func() {
 		memLog = new(memLogger)
@@ -47,12 +51,12 @@ func MemLogger(held uint) *memLogger {
 	return memLog
 }
 
-// logs display
+// logsExtension writes a HTML rendering of the logs.
 func (l *memLogger) logsExtension(w http.ResponseWriter) {
 	fmt.Fprint(w, "<h1>Recent logs</h1>")
 	l.lock.RLock()
 	defer l.lock.RUnlock()
-	i := l.index
+	i := l.index // Oldest log
 	for _ = range l.size {
 		ent := &l.cb[i]
 		if ent.ln != 0 {
@@ -67,10 +71,11 @@ func (l *memLogger) Write(p []byte) (n int, err error) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	ent := &l.cb[l.index]
-	// Check if buffer needs resizing
-	if ln > len(ent.buf) {
+	if ln > len(ent.buf) { // Check if buffer needs resizing
 		ent.buf = make([]byte, ln)
 	}
+	// We don't resize the slice here, we just save the length separately.
+	// That length can be used when the log is rendered.
 	ent.ln = ln
 	copy(ent.buf, p)
 	l.index = (l.index + 1) % l.size
