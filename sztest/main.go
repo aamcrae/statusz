@@ -3,24 +3,28 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
-	"github.com/aamcrae/statusz"
+	szlog "github.com/aamcrae/statusz/slog"
 )
 
 var port = flag.Int("port", 9000, "Server port")
 
 func main() {
 
-	statusz.StdLoggerDefault(10)
+	// Default logging to stdout and statusz
+	sl := slog.New(slog.NewMultiHandler(szlog.StatuszHandler(10), slog.NewTextHandler(os.Stdout, nil)))
+	slog.SetDefault(sl)
+	
 	go func() {
 		var i int
 		for {
 			i++
-			log.Printf("log number %d", i)
-			time.Sleep(2 * time.Second)
+			slog.Info("slog number", "val", i)
+			time.Sleep(1 * time.Second)
 		}
 	}()
 
