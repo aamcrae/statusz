@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	szlog "github.com/aamcrae/statusz/slog"
+	"github.com/aamcrae/statusz/szlog"
 )
 
 var port = flag.Int("port", 9000, "Server port")
